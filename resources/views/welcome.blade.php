@@ -15,8 +15,8 @@
 </head>
 
 <body class="font-sans antialiased bg-white">
-    <h1 class=" text-blue-800 text-3xl">Welcome to {{ config('app.name') }}</h1>
-    <p>Your application is now up and running!</p>
+    <h1 class="text-center mt-20 text-green-500 text-3xl">Welcome Minhajul Islam to {{ config('app.name') }}</h1>
+    <p class="text-gray-700 text-center">Your application is now up and running!</p>
     <footer class="mt-4 text-center">
         <p>&copy; {{ date('Y') }} {{ config('app.name') }}. All rights reserved.</p>
     </footer>

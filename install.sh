@@ -1,22 +1,101 @@
 #!/bin/bash
 
 # Clean up first
+sudo chmod -R 777 /home .
 docker-compose down -v
 docker system prune -a --volumes -f
 
-# Create necessary directories
-mkdir -p docker/{nginx/conf.d,php,data/{mysql,redis}}
-
-# Set proper permissions
-chmod -R 777 docker/data/{mysql,redis}
-
-# Create initial nginx config if it doesn't exist
-if [ ! -f docker/nginx/conf.d/app.conf ]; then
-    cp docker/nginx/conf.d/app.conf.example docker/nginx/conf.d/app.conf 2>/dev/null || :
-fi
+# Create necessary directories and set permissions
+mkdir -p docker/{nginx/conf.d,php,data/{mysql,redis}} vendor storage/framework/{sessions,views,cache} bootstrap/cache node_modules
+chmod -R 777 docker/data/{mysql,redis} vendor storage bootstrap/cache node_modules
 
 # Build and start containers
 docker-compose up -d --build
+
+# Wait for containers to be ready
+sleep 10
+
+# Install composer dependencies first
+echo "Installing Composer dependencies..."
+docker-compose exec -T app composer install --no-scripts
+docker-compose exec -T app composer dump-autoload
+
+# Set proper permissions
+docker-compose exec -T app chown -R www-data:www-data /var/www
+docker-compose exec -T app chmod -R 775 /var/www/storage /var/www/bootstrap/cache
+
+# Generate environment file
+docker-compose exec -T app bash -c 'cat > .env << EOL
+APP_NAME=Laravel
+APP_ENV=local
+APP_KEY=
+APP_DEBUG=true
+APP_TIMEZONE=UTC
+APP_URL=http://localhost:8000
+
+APP_LOCALE=en
+APP_FALLBACK_LOCALE=en
+APP_FAKER_LOCALE=en_US
+
+APP_MAINTENANCE_DRIVER=file
+
+PHP_CLI_SERVER_WORKERS=4
+
+BCRYPT_ROUNDS=12
+
+LOG_CHANNEL=stack
+LOG_STACK=single
+LOG_DEPRECATIONS_CHANNEL=null
+LOG_LEVEL=debug
+
+DB_CONNECTION=mysql
+DB_HOST=mysql
+DB_PORT=3306
+DB_DATABASE=laravel_db
+DB_USERNAME=laravel_user
+DB_PASSWORD=your_password
+
+SESSION_DRIVER=redis
+SESSION_LIFETIME=120
+SESSION_ENCRYPT=false
+SESSION_PATH=/
+SESSION_DOMAIN=null
+
+BROADCAST_CONNECTION=log
+FILESYSTEM_DISK=local
+QUEUE_CONNECTION=redis
+
+CACHE_STORE=redis
+CACHE_PREFIX=
+
+MEMCACHED_HOST=127.0.0.1
+
+REDIS_CLIENT=predis
+REDIS_HOST=redis
+REDIS_PASSWORD=null
+REDIS_PORT=6379
+
+MAIL_MAILER=log
+MAIL_SCHEME=null
+MAIL_HOST=127.0.0.1
+MAIL_PORT=2525
+MAIL_USERNAME=null
+MAIL_PASSWORD=null
+MAIL_FROM_ADDRESS="hello@example.com"
+MAIL_FROM_NAME="\${APP_NAME}"
+
+AWS_ACCESS_KEY_ID=
+AWS_SECRET_ACCESS_KEY=
+AWS_DEFAULT_REGION=us-east-1
+AWS_BUCKET=
+AWS_USE_PATH_STYLE_ENDPOINT=false
+
+VITE_APP_NAME="\${APP_NAME}"
+EOL'
+
+# Generate app key and clear config
+docker-compose exec -T app php artisan key:generate
+docker-compose exec -T app php artisan config:clear
 
 # Function to check MySQL connection
 check_mysql_connection() {
@@ -53,47 +132,7 @@ fi
 echo "MySQL is ready!"
 initialize_database
 
-# Configure Laravel environment
-docker-compose exec -T app bash -c 'cat > .env << EOL
-APP_NAME=Laravel
-APP_ENV=local
-APP_KEY=
-APP_DEBUG=true
-APP_URL=http://localhost:8000
-
-LOG_CHANNEL=stack
-LOG_LEVEL=debug
-
-DB_CONNECTION=mysql
-DB_HOST=mysql
-DB_PORT=3306
-DB_DATABASE=laravel_db
-DB_USERNAME=laravel_user
-DB_PASSWORD=your_password
-
-REDIS_CLIENT=predis
-REDIS_HOST=redis
-REDIS_PASSWORD=null
-REDIS_PORT=6379
-
-CACHE_DRIVER=redis
-SESSION_DRIVER=redis
-QUEUE_CONNECTION=redis
-EOL'
-
-# Generate app key and clear config
-docker-compose exec -T app php artisan key:generate
-docker-compose exec -T app php artisan config:clear
-
-# Verify database connection
-echo "Verifying database connection..."
-if ! docker-compose exec -T app php artisan db:show; then
-    echo "Database connection failed. Check your credentials and try again."
-    exit 1
-fi
-
-# Install dependencies and setup Laravel
-docker-compose exec -T app composer install
+# Install Redis and other dependencies
 docker-compose exec -T app composer require predis/predis
 
 # Create cache tables first
@@ -120,10 +159,15 @@ sed -i "s/SESSION_DRIVER=.*/SESSION_DRIVER=redis/" .env
 # Run remaining migrations
 docker-compose exec -T app php artisan migrate --force
 
-# Setup frontend
-docker-compose exec -T app npm install
-docker-compose exec -T app npm install -D tailwindcss postcss autoprefixer
-docker-compose exec -T app npx tailwindcss init -p
-docker-compose exec -T app npm run build
+# Setup frontend with proper permissions
+echo "Setting up frontend..."
+docker-compose exec -T app bash -c '
+mkdir -p /var/www/node_modules
+chown -R node:node /var/www/node_modules
+npm install
+npm install -D tailwindcss postcss autoprefixer
+npx tailwindcss init -p
+npm run build
+'
 
 echo "Setup completed successfully!"

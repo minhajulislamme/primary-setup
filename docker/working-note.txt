@@ -10,3 +10,6 @@ find /home/minhajulislam/Project/e-commerce-web-app -type f -exec chmod 644 {} \
 
 sudo chmod -R 775 /home/minhajulislam/Project/e-commerce-web-app/storage
 sudo chmod -R 775 /home/minhajulislam/Project/e-commerce-web-app/bootstrap/cache
+
+
+sudo chmod -R 777 /home .
