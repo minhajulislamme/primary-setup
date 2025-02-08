@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Clean up first
-sudo chmod -R 777 /home .
+sudo chmod -R 777 .
 docker-compose down -v
 docker system prune -a --volumes -f
 
